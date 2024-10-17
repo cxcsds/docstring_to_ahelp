@@ -2491,6 +2491,7 @@ def merge_metadata(xmlattrs, metadata=None):
 
 
 def convert_docutils(name, doc, sig,
+                     annotated_sig=None,
                      symbol=None, metadata=None, synonyms=None,
                      dtd='ahelp'):
     """Given the docutils documentation, convert to ahelp DTD.
@@ -2499,10 +2500,12 @@ def convert_docutils(name, doc, sig,
     ----------
     name : str
     doc
-        The document (resturctured text)
+        The document (restructured text)
     sig : str or None
         The signature of the name (will be over-ridden by the
         document, if given).
+    annotated_sig
+        The annotation signature, if present.
     symbol
         The symbol to document (e.g. sherpa.astro.ui.load_table or
         sherpa.astro.ui.xsapec) or None.
@@ -2547,6 +2550,20 @@ def convert_docutils(name, doc, sig,
     syntax, nodes = find_syntax(name, sig, nodes)
     synopsis, refkeywords, nodes = find_synopsis(nodes)
     desc, nodes = find_desc(nodes)
+
+    # Do we add any information about the typing of the routine?
+    #
+    if annotated_sig is not None:
+        if desc is None:
+            desc = ElementTree.Element('DESC')
+
+        apara = ElementTree.Element('PARA')
+        apara.text = 'The types of the arguments are:'
+        vpara = ElementTree.Element('VERBATIM')
+        vpara.text = f'    {annotated_sig}'
+
+        desc.insert(0, apara)
+        desc.insert(1, vpara)
 
     # For XSPEC models, add a note about
     # additive/multiplicative/convolution to the SYNTAX block (could
