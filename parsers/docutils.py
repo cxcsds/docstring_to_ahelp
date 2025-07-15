@@ -32,9 +32,9 @@ from sherpa.stats import Stat
 from sherpa.ui.utils import ModelWrapper
 
 
-CIAOVER = "CIAO 4.17"
+CIAOVER = "CIAO 4.18"
 XSPECVER = "12.14.0k"
-LASTMOD = "December 2024"
+LASTMOD = "December 2025"
 
 
 objname = '<unset>'
@@ -56,6 +56,7 @@ def convert_version_number(v):
     Not all Sherpa releases map to a CIAO release.
 
     CIAO releases:
+       4.18
        4.17
        4.16
        4.15
@@ -79,6 +80,7 @@ def convert_version_number(v):
         # Generic naming, drop the .0
         return f'{toks[0]}.{toks[1]}'
     elif v.startswith('4.17.'):
+        return '4.18'
     elif v.startswith('4.16.'):
         return '4.17'
     elif v.startswith('4.15.'):
@@ -1798,8 +1800,13 @@ def find_notes(name, indoc):
     # These are new to CIAO 4.16 - cglumin is the only one
     v12130 = version('12.13.0')
 
-    # These are new to CIAO 4.17
+    # These are new to CIAO 4.17.
     v12140 = "This model requires XSPEC 12.14.0 or later."
+
+    # These are new in 4.18 but we don't provide this version
+    # of XSPEC and so we drop them.
+    #
+    v12150 = "This model requires XSPEC 12.15.0 or later."
 
     # First remove all the old "added in XSPEC x.y.z" lines
     #
@@ -1821,7 +1828,8 @@ def find_notes(name, indoc):
     #
     def not_wanted(n):
         txt = n.astext()
-        return txt == v12121
+        # return txt == v12121
+        return txt in [v12121, v12150]
 
     unodes = list(filter(not_wanted, lnodes))
     if len(unodes) > 0:
@@ -1839,6 +1847,7 @@ def find_notes(name, indoc):
     # CIAO 4.15 uses 12.12.0  (actually 12.12.1)
     # CIAO 4.16 uses 12.13.0  (as of May 2023)
     # CIAO 4.17 uses 12.14.0k, which has new models
+    # CIAO 4.18 uses 12.14.0k, and has new models compared to 4.17
     #
     any_notes = False
     out = ElementTree.Element("ADESC", {'title': 'Notes'})
