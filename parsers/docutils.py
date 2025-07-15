@@ -165,10 +165,10 @@ def is_para(node):
 
 XSMODEL_RE = re.compile('^XS[a-z0-9]+$')
 
-XSVERSION_WARNING = re.compile('^This model requires XSPEC 12\.\d\d\.\d or later.$')
+XSVERSION_WARNING = re.compile(r'^This model requires XSPEC 12\.\d\d\.\d or later.$')
 
 
-# Just check that we understand the lniks between reference and target
+# Just check that we understand the links between reference and target
 # nodes. This is really "just for fun".
 #
 references = set()
@@ -1209,7 +1209,7 @@ def cleanup_re(regexp, txt):
     return cleanup_re(regexp, ntxt)
 
 
-CLASS_RE = re.compile("(.+)<class 'sherpa\..+\.([^\.]+)'>(.+)")
+CLASS_RE = re.compile(r"(.+)<class 'sherpa\..+\.([^\.]+)'>(.+)")
 
 def cleanup_sig_class(sig):
     """<class 'sherpa.*.X'> -> X"""
@@ -1981,9 +1981,9 @@ def find_references(indoc):
 
 
 # this does not extend across a newline
-SHERPA_MODEL_SETTING_RE = re.compile(">>> (.+) = sherpa.models\.[^\(]+\.([A-Z][a-zA-Z0-9]+)()")
+SHERPA_MODEL_SETTING_RE = re.compile(r">>> (.+) = sherpa.models\.[^\(]+\.([A-Z][a-zA-Z0-9]+)()")
 SHERPA_XSMODEL_SETTING_RE = re.compile(">>> (.+) = XS([a-zA-Z0-9]+)()")
-SHERPA_MODELS_RE = re.compile("(.+)sherpa.models\.[^\(]+\.([A-Z][a-zA-Z0-9]+)(.+)")
+SHERPA_MODELS_RE = re.compile(r"(.+)sherpa.models\.[^\(]+\.([A-Z][a-zA-Z0-9]+)(.+)")
 
 
 def cleanup_sherpa_model_setting(txt):
