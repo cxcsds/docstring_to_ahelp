@@ -929,7 +929,8 @@ def process_symbol(name, sym, dtd='ahelp',
 
             if isinstance(v, str):
                 # let me know uf there's more annotations to fix
-                assert False, (k, v, type(v))
+                assert False, ("process_symbol:annotation",
+                               k, v, type(v))
 
         sym.__annotations__ = orig_ann
 

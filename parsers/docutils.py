@@ -47,7 +47,7 @@ def set_parent(name):
 
 
 def dbg(msg, info='DBG'):
-    sys.stderr.write("{} - {}: {}\n".format(objname, info, msg))
+    sys.stderr.write(f"{objname} - {info}: {msg}\n")
 
 
 def convert_version_number(v):
@@ -77,7 +77,8 @@ def convert_version_number(v):
 
     if toks[2] == '0':
         # Generic naming, drop the .0
-        return '{}.{}'.format(toks[0], toks[1])
+        return f'{toks[0]}.{toks[1]}'
+    elif v.startswith('4.17.'):
     elif v.startswith('4.16.'):
         return '4.17'
     elif v.startswith('4.15.'):
@@ -225,7 +226,7 @@ def astext(node):
     """
 
     if node.tagname == 'system_message':
-        dbg("- skipping message: {}".format(node))
+        dbg(f"- skipping message: {node}")
         return ''
 
     if node.tagname == '#text':
@@ -238,7 +239,7 @@ def astext(node):
     # text
     if node.tagname == 'footnote':
         assert node[0].tagname == 'label', node
-        ctr = "[{}]".format(node[0].astext())
+        ctr = f"[{node[0].astext()}]"
 
         # handle different variants; should these use astext()?
         #
@@ -250,12 +251,12 @@ def astext(node):
             # to above.
             cts = astext(node[1])
         else:
-            raise ValueError("Unexpected node {} in {}".format(node[1].tagname, node))
+            raise ValueError(f"Unexpected node {node[1].tagname} in {node}")
 
-        return "{} {}".format(ctr, cts)
+        return f"{ctr} {cts}"
 
     if node.tagname == 'footnote_reference':
-        return "[{}]".format(node.astext())
+        return f"[{node.astext()}]"
 
     if node.tagname == 'title_reference':
         # Limited support: hard-coded to match the current documentation
@@ -281,7 +282,7 @@ def astext(node):
         # if out.startswith('sherpa.'):
         #     assert False, "title_reference: " + out
 
-        return "`{}`".format(out)
+        return f"`{out}`"
 
     if node.tagname == 'literal':
         # Limited speacial case here:
@@ -437,7 +438,7 @@ def convert_para(para, complex=True):
     # reported = set([])
 
     if para.tagname != "paragraph":
-        msg = "- paragraph handling {}".format(para.tagname)
+        msg = f"- paragraph handling {para.tagname}"
         dbg(msg)
 
     # Handling of the text is a bit complex now that we handle
@@ -600,7 +601,7 @@ def convert_block_quote(para):
         out.text = astext(para[0])
         return out
 
-    raise ValueError("Unexpected block_quote element in:\n{}".format(para))
+    raise ValueError(f"Unexpected block_quote element in:\n{para}")
 
 
 def convert_enumerated_list(para):
@@ -861,7 +862,7 @@ def convert_table(tbl):
             add_table_row(out, el)
             continue
 
-        raise ValueError("Unexpected tag: {}".format(el.tagname))
+        raise ValueError(f"Unexpected tag: {el.tagname}")
 
     return out
 
@@ -981,7 +982,7 @@ def convert_versionwarning(block):
     # parts of the document.
     #
     if 'DONE' in store_versions:
-        raise ValueError("Unexpected block {}".format(block))
+        raise ValueError(f"Unexpected block {block}")
 
     if block.tagname == 'versionadded':
         lbl = 'Added'
@@ -1009,7 +1010,7 @@ def convert_versionwarning(block):
     toks = b0.split(maxsplit=1)
 
     version = convert_version_number(toks[0])
-    title = '{} in CIAO {}'.format(lbl, version)
+    title = f'{lbl} in CIAO {version}'
 
     out = ElementTree.Element("PARA")
     if title not in store_versions["titles"]:
@@ -1058,7 +1059,7 @@ def convert_comment_versionwarning(block):
     # parts of the document.
     #
     if 'DONE' in store_versions:
-        raise ValueError("Unexpected block {}".format(block))
+        raise ValueError(f"Unexpected block {block}")
 
     assert len(block) == 1
 
@@ -1079,7 +1080,7 @@ def convert_comment_versionwarning(block):
     toks = astxt.split('\n', maxsplit=1)
 
     version = convert_version_number(toks[0].strip())
-    title = '{} in CIAO {}'.format(lbl, version)
+    title = f'{lbl} in CIAO {version}'
 
     out = ElementTree.Element("PARA")
     out.set('title', title)
@@ -1088,7 +1089,7 @@ def convert_comment_versionwarning(block):
         out.text = toks[1]
 
     if len(toks) > 2:
-        raise RuntimeError("Need to handle multi-para versionxxx block: {}".format(block))
+        raise RuntimeError(f"Need to handle multi-para versionxxx block: {block}")
 
     store_versions[tagname].append(out)
     return None
@@ -1122,7 +1123,7 @@ def convert_field_body(fbody):
     elif n == 1:
         return convert_para(fbody[0], complex=False)
     else:
-        raise ValueError("Need to handle {} blocks".format(n))
+        raise ValueError(f"Need to handle {n} blocks")
 
 
 para_converters = {'doctest_block': convert_doctest_block,
@@ -1172,7 +1173,7 @@ def make_para_blocks(para):
     """
 
     if para.tagname == 'system_message':
-        msg = "- skipping message: {}".format(para.astext())
+        msg = f"- skipping message: {para.astext()}"
         dbg(msg)
         return []
 
@@ -1186,7 +1187,7 @@ def make_para_blocks(para):
         try:
             converter = para_converters[para.tagname]
         except KeyError:
-            raise ValueError("Unsupported paragraph type:\ntagname={}\n{}".format(para.tagname, para))
+            raise ValueError(f"Unsupported paragraph type:\ntagname={para.tagname}\n{para}")
 
         single = para.tagname not in para_mconverters
 
@@ -1272,7 +1273,7 @@ def find_syntax(name, sig, indoc):
         return argline, indoc
 
     txt = node.astext().strip()
-    if not txt.startswith('{}('.format(name)):
+    if not txt.startswith(f'{name}('):
         return argline, indoc
 
     # I do not think we have any files that hit this section,
@@ -1311,7 +1312,7 @@ def add_pars_to_syntax(syntax, fieldlist):
     for pname, ptype in partypes:
         ps = make_para_blocks(ptype)
         assert len(ps) == 1
-        ptxt = '{} - {}'.format(pname, ps[0].text)
+        ptxt = f'{pname} - {ps[0].text}'
         ElementTree.SubElement(syntax, 'LINE').text = ptxt
 
     return syntax
@@ -1370,14 +1371,14 @@ def augment_examples(examples, symbol):
 
     syn = ElementTree.SubElement(example, 'SYNTAX')
     line = ElementTree.SubElement(syn, 'LINE')
-    line.text = '>>> create_model_component("{}", "mdl")'.format(mtype)
+    line.text = f'>>> create_model_component("{mtype}", "mdl")'
     line = ElementTree.SubElement(syn, 'LINE')
     line.text = '>>> print(mdl)'
 
     desc = ElementTree.SubElement(example, 'DESC')
     para = ElementTree.SubElement(desc, 'PARA')
-    para.text = 'Create a component of the {} model'.format(mtype) + \
-                ' and display its default parameters. The output is:'
+    para.text = f'Create a component of the {mtype} model ' + \
+                'and display its default parameters. The output is:'
 
     verb = ElementTree.SubElement(desc, 'VERBATIM')
     verb.text = strval
@@ -1572,7 +1573,7 @@ def find_fieldlist(indoc):
                 body = f
 
             else:
-                raise ValueError("Unexpected field member:\n{}".format(f))
+                raise ValueError(f"Unexpected field member:\n{f}")
 
         toks = name.split(' ', 1)
         t0 = toks[0]
@@ -1620,7 +1621,7 @@ def find_fieldlist(indoc):
                 # last item it is okay (ie ordering is maintained).
                 #
                 del params[prev_key]
-                new_key = "{} {}".format(prev_key, pname)
+                new_key = f"{prev_key} {pname}"
 
                 prev_val['name'] = new_key
                 prev_val['ivar'] = body
@@ -1688,7 +1689,7 @@ def find_seealso(indoc):
             names.append(n.astext())
 
     else:
-        raise ValueError("Unexpected see also contents:\n{}".format(node))
+        raise ValueError(f"Unexpected see also contents:\n{node}")
 
     # Strip out "," fragments.
     #
@@ -1705,14 +1706,14 @@ def find_seealso(indoc):
         if n.startswith('sherpa.'):
             n = n.split('.')[-1]
         elif n.find('.') != -1:
-            sys.stderr.write("ERROR: invalid seealso {}\n".format(names))
+            sys.stderr.write(f"ERROR: invalid seealso {names}\n")
             sys.exit(1)
 
         if n not in out:
             out.append(n)
 
     if len(names) != len(out):
-        msg = "- see also contains duplicates: {}".format(names)
+        msg = f"- see also contains duplicates: {names}"
         dbg(msg)
 
     return out, indoc[1:]
@@ -2386,7 +2387,7 @@ def extract_params(fieldinfo,
         return None
 
     adesc = ElementTree.Element("ADESC",
-                                {'title': '{}S'.format(value.upper())})
+                                {'title': f'{value.upper()}S'})
 
     # For CIAO 4.17 we do not add this information.
     #
@@ -2395,11 +2396,11 @@ def extract_params(fieldinfo,
 
     p = ElementTree.SubElement(adesc, 'PARA')
     if nparams == 0:
-        p.text = 'This {} has no {}s'.format(funcname, value)
+        p.text = f'This {funcname} has no {value}s'
     elif nparams == 1:
-        p.text = 'The {} for this {} is:'.format(value, funcname)
+        p.text = f'The {value} for this {funcname} is:'
     else:
-        p.text = 'The {}s for this {} are:'.format(value, funcname)
+        p.text = f'The {value}s for this {funcname} are:'
 
     if nparams > 0:
         tbl = ElementTree.SubElement(adesc, 'TABLE')
@@ -2522,7 +2523,7 @@ def create_seealso(name, seealso, symbol=None):
 
     if seealso is None:
         if dsg == '':
-            msg = "- {} has no SEE ALSO".format(name)
+            msg = f"- {name} has no SEE ALSO"
             dbg(msg)
         return '', dsg
 
@@ -2530,11 +2531,9 @@ def create_seealso(name, seealso, symbol=None):
     #
     def convert(t1, t2):
         if t1 < t2:
-            toks = (t1, t2)
-        else:
-            toks = (t2, t1)
+            return f"{t1}{t2}"
 
-        return "{}{}".format(*toks)
+        return f"{t2}{t1}"
 
     nlower = name.lower()
     pairs = [convert(nlower, s.lower()) for s in seealso]
@@ -2847,14 +2846,14 @@ def convert_docutils(name: str,
 
     # assert nodes == [], nodes
     if nodes != []:
-        dbg("ignoring trailing:\n{}".format(nodes), info='WARN')
+        dbg(f"ignoring trailing:\n{nodes}", info='WARN')
         return nodes
 
     # Augment the blocks
     #
     if syntax is None:
         # create the syntax block
-        dbg("does {} need a SYNTAX block?".format(name), info='TODO')
+        dbg(f"does {name} need a SYNTAX block?", info='TODO')
 
     # Try and come up with an automated 'See Also' solution
     #
@@ -2919,7 +2918,7 @@ def convert_docutils(name: str,
     elif dtd == 'sxml':
         rootname = 'cxcdocumentationpage'
     else:
-        raise RuntimeError('unknown dtd={}'.format(dtd))
+        raise RuntimeError(f'unknown dtd={dtd}')
 
     root = ElementTree.Element(rootname)
     outdoc = ElementTree.ElementTree(root)
@@ -2968,7 +2967,7 @@ def convert_docutils(name: str,
         context = find_context(name, symbol)
         xmlattrs['context'] = context
         if context == 'sherpaish':
-            dbg("- fall back context=sherpaish for {}".format(name))
+            dbg(f"- fall back context=sherpaish for {name}")
 
     # Add in any synonyms to the refkeywords (no check is made to
     # see if they are already there).

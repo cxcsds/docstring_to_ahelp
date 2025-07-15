@@ -2,10 +2,10 @@
 
 You need a CIAO installation (tested with conda) in which you have installed
 
-  sphinx
+  sphinx<8
 
 We then start the process with the following - the exact warning messages
-depends on what versino of the code and what versino of CIAO is being
+depends on what version of the code and what version of CIAO is being
 analyzed:
 
 ```
