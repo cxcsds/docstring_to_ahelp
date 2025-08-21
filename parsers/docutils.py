@@ -266,23 +266,27 @@ def astext(node):
         #
         out = node.astext()
 
-        if out == 'sherpa.models.model.ArithmeticModel':
-            return "`ArithmeticModel`"
-        if out == 'sherpa.models.parameter.Parameter':
-            return "`Parameter`"
-        if out == 'sherpa.instrument.PSFModel':
-            return 'psfmodel'
-        if out == 'sherpa.astro.models.JDPileup':
-            return 'jdpileup'
-        if out.startswith('sherpa.astro.ui.'):
-            out = out[16:]
-            if out.startswith('utils.'):
-                out = out[6:]
-
+        if out in ["sherpa.sim", "sherpa.utils",
+                   "sherpa.astro.datastack", "sherpa.ui",
+                   "sherpa.astro.ui", "sherpa.utils.logging"]:
             return f"`{out}`"
+
+        if out.startswith("sherpa.") or out.startswith("~"):
+            toks = out.split(".")
+            assert len(toks) > 1, "Unexpected reference: `{out}`"
+            ltok = toks[-1]
+
+            # special case models
+            #
+            if ltok in ["JDPileup", "PSFModel"]:
+                return f"`{ltok.lower()}`"
+
+            return f"`{ltok}`"
 
         # if out.startswith('sherpa.'):
         #     assert False, "title_reference: " + out
+
+        assert not out.startswith('sherpa'), f"reference <{out}>"
 
         return f"`{out}`"
 
