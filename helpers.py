@@ -1,9 +1,10 @@
 """Utility routines."""
 
+from collections.abc import Callable, Sequence
 import os
 from inspect import signature
 import sys
-from typing import Any, Callable, Optional, Sequence, Union
+from typing import Any
 
 import numpy as np
 
@@ -37,9 +38,10 @@ from parsers.sherpa import sym_to_rst, sym_to_sig
 # from sherpa.utils.random import RandomType
 
 IdType = int | str
+IdTypes = Sequence[IdType]
 RandomType = np.random.Generator | np.random.RandomState
 ModelType = Model | str
-
+PrefsType = dict[str, Any]
 
 
 # CIAO 4.18
@@ -790,6 +792,8 @@ def process_symbol(name, sym, dtd='ahelp',
     # strings, and try to handle Optional/Union -> a | .... This is
     # not ideal.
     #
+    # Is this still needed?
+    #
     if orig_ann is not None:
         for k, v in orig_ann.items():
             if v == 'None':
@@ -835,13 +839,17 @@ def process_symbol(name, sym, dtd='ahelp',
                 continue
 
             if v == 'Sequence[str]':
-                assert False  # do we need this
+                assert False  # do we need this ?
                 orig_ann[k] = Sequence[str]
                 continue
 
             if v in ['Optional[Sequence[str]]',
                      'Sequence[str] | None']:
                 orig_ann[k] = Sequence[str] | None
+                continue
+
+            if v == 'np.ndarray':
+                orig_ann[k] = np.ndarray
                 continue
 
             if v == 'dict[str, np.ndarray]':
@@ -862,6 +870,22 @@ def process_symbol(name, sym, dtd='ahelp',
 
             if v == 'IdType':
                 orig_ann[k] = IdType
+                continue
+
+            if v == 'IdTypes':
+                orig_ann[k] = IdTypes
+                continue
+
+            if v == 'IdTypes | None':
+                orig_ann[k] = IdTypes | None
+                continue
+
+            if v == 'IdType | IdTypes':
+                orig_ann[k] = IdType | IdTypes
+                continue
+
+            if v == 'IdType | IdTypes | None':
+                orig_ann[k] = IdType | IdTypes | None
                 continue
 
             if v == 'list[IdType]':
@@ -962,6 +986,10 @@ def process_symbol(name, sym, dtd='ahelp',
 
             if v == 'str | dict[str, str]':
                 orig_ann[k] = str | dict[str, str]
+                continue
+
+            if v == 'PrefsType':
+                orig_ann[k] = PrefsType
                 continue
 
             if isinstance(v, str):
