@@ -18,6 +18,7 @@ from sherpa.astro.data import DataARF, DataPHA, DataRMF
 from sherpa.data import Data
 from sherpa.fit import FitResults
 from sherpa.models.model import Model
+from sherpa.models.parameter import Parameter
 from sherpa.optmethods import OptMethod
 from sherpa.plot import MultiPlot
 from sherpa.stats import Stat
@@ -42,6 +43,7 @@ IdTypes = Sequence[IdType]
 RandomType = np.random.Generator | np.random.RandomState
 ModelType = Model | str
 PrefsType = dict[str, Any]
+ArrayType = Sequence[float] | np.ndarray
 
 
 # CIAO 4.18
@@ -824,9 +826,21 @@ def process_symbol(name, sym, dtd='ahelp',
                 orig_ann[k] = str | float
                 continue
 
+            if v == 'ArrayType':
+                orig_ann[k] = ArrayType
+                continue
+
             if v in ['Optional[int]',
                      'int | None']:
                 orig_ann[k] = int | None
+                continue
+
+            if v == 'bool | None':
+                orig_ann[k] = bool | None
+                continue
+
+            if v == 'float | None':
+                orig_ann[k] = float | None
                 continue
 
             if v in ['Optional[str]',
@@ -990,6 +1004,23 @@ def process_symbol(name, sym, dtd='ahelp',
 
             if v == 'PrefsType':
                 orig_ann[k] = PrefsType
+                continue
+
+            if v == 'Parameter':
+                orig_ann[k] = Parameter
+                continue
+
+            # This should be a short-lived fix
+            if v == 'str | Patameter':
+                orig_ann[k] = str | Parameter
+                continue
+
+            if v == 'str | Parameter':
+                orig_ann[k] = str | Parameter
+                continue
+
+            if v == 'str | Parameter | None':
+                orig_ann[k] = str | Parameter | None
                 continue
 
             if isinstance(v, str):
