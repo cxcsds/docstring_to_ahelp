@@ -32,18 +32,20 @@ from parsers.sherpa import sym_to_rst, sym_to_sig
 
 
 # Replace the actual Sherpa version, which uses Python 3.9 compatible
-# syntax, with Python 3.10 versions:
+# syntax, with Python 3.10 versions. Is this still needed?
 #
-# from sherpa.ui.utils import ModelType
-# from sherpa.utils.types import IdType
-# from sherpa.utils.random import RandomType
 
-IdType = int | str
-IdTypes = Sequence[IdType]
-RandomType = np.random.Generator | np.random.RandomState
-ModelType = Model | str
-PrefsType = dict[str, Any]
-ArrayType = Sequence[float] | np.ndarray
+from sherpa.sim.sample import ClipValue
+from sherpa.ui.utils import ModelType
+from sherpa.utils.random import RandomType
+from sherpa.utils.types import ArrayType, IdType, IdTypes, PrefsType
+
+# IdType = int | str
+# IdTypes = Sequence[IdType]
+# RandomType = np.random.Generator | np.random.RandomState
+# ModelType = Model | str
+# PrefsType = dict[str, Any]
+# ArrayType = Sequence[float] | np.ndarray
 
 
 # CIAO 4.18
@@ -866,6 +868,10 @@ def process_symbol(name, sym, dtd='ahelp',
                 orig_ann[k] = np.ndarray
                 continue
 
+            if v == 'np.ndarray | None':
+                orig_ann[k] = np.ndarray | None
+                continue
+
             if v == 'dict[str, np.ndarray]':
                 orig_ann[k] = dict[str, np.ndarray]
                 continue
@@ -876,6 +882,10 @@ def process_symbol(name, sym, dtd='ahelp',
 
             if v == 'tuple[tuple[np.ndarray, ...], np.ndarray]':
                 orig_ann[k] = tuple[tuple[np.ndarray, ...], np.ndarray]
+                continue
+
+            if v == 'tuple[np.ndarray, np.ndarray, np.ndarray]':
+                orig_ann[k] = tuple[np.ndarray, np.ndarray, np.ndarray]
                 continue
 
             if v == 'tuple[float, float, float]':
@@ -1021,6 +1031,10 @@ def process_symbol(name, sym, dtd='ahelp',
 
             if v == 'str | Parameter | None':
                 orig_ann[k] = str | Parameter | None
+                continue
+
+            if v == 'ClipValue':
+                orig_ann[k] = ClipValue
                 continue
 
             if isinstance(v, str):
