@@ -1948,23 +1948,117 @@ def find_references(indoc):
                                 indoc[1:])
 
     out = ElementTree.Element("ADESC", {'title': 'References'})
-    cts = ElementTree.SubElement(out, 'LIST')
+    para = ElementTree.SubElement(out, 'PARA')
+    syntax = ElementTree.SubElement(para, 'SYNTAX')
 
     for footnote in lnodes:
         # This used to be a footnote but as of CIAO 4.16 it
         # can now be much more.
         #
         if footnote.tagname == 'footnote':
-            ElementTree.SubElement(cts, 'ITEM').text = astext(footnote)
+            # Assume the structure is
+            # <footnote ids="footnote-1" names="1">
+            #   <label>1</label>
+            #   <paragraph>Calzetti, Kinney, Storchi-Bergmann, 1994, ApJ, 429, 582
+            #     <reference refuri="https://adsabs.harvard.edu/abs/1994ApJ...429..582C">https://adsabs.harvard.edu/abs/1994ApJ...429..582C</reference>
+            #   </paragraph>
+            # </footnote>
+            #
+            # Or
+            #
+            # <footnote ids="footnote-1" names="1">
+            #   <label>1</label>
+            #   <paragraph>
+            #     <reference refuri="https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/XSmodelEdge.html">https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/XSmodelEdge.html</reference>
+            #   </paragraph>
+            # </footnote>
+            #
+            # Or
+            #
+            # <footnote ids="footnote-1" names="1">
+            #   <label>1</label>
+            #   <paragraph>
+            #     <reference refuri="https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/XSabund.html">https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/XSabund.html</reference>\nNote that this may refer to a newer version than the\ncompiled version used by Sherpa; use <title_reference>get_xsversion</title_reference> to\ncheck.
+            #   </paragraph>
+            # </footnote>'
+            #
+
+            assert len(footnote) == 2, (len(footnote), str(footnote))
+            assert footnote[0].tagname == "label", str(footnote[0])
+            assert footnote[1].tagname == "paragraph", str(footnote[1])
+
+            line = ElementTree.SubElement(syntax, 'LINE')
+
+            # strip out the paragraph text from the reference URI
+            # Assume @refuri is the same as the text contents of reference
+            #
+            if len(footnote[1]) == 2:
+                # Assume we have text and a reference URI
+                assert footnote[1][1].astext().startswith("http"), footnote[1][1]
+
+                href = ElementTree.SubElement(line, 'HREF')
+                href.text = f"[{footnote[0].astext()}] {footnote[1][0].astext()}"
+                href.set("link", footnote[1][1].astext())
+
+            elif len(footnote[1]) == 1:
+
+                # Do we have a URL?
+                l = footnote[0].astext()
+                r = footnote[1].astext()
+                if r.startswith("http"):
+                    href = ElementTree.SubElement(line, 'HREF')
+                    href.text = f"[{l}]"
+                    href.set("link", r)
+
+                else:
+                    line.text = f"[{l}] {r}"
+
+            elif footnote[1][0].tagname == "reference" and \
+                 footnote[1][0].get("refuri").startswith("http"):
+
+                refuri = footnote[1][0].get("refuri")
+
+                # Need to add extra text, that may itself contain things
+                # that need further processing.
+                #
+                href = ElementTree.SubElement(line, 'HREF')
+
+                if footnote[1][0].astext() == refuri:
+                    href.text = f"[{footnote[0].astext()}]"
+                else:
+                    href.text = f"[{footnote[0].astext()}] {footnote[1][0].astext()}"
+
+                href.set("link", refuri)
+
+                # Add in the extra text (for now no post-processing).
+                #
+                dump = "".join(footnote[1][idx].astext()
+                               for idx in range(1, len(footnote[1])))
+                href.tail = dump
+
+            else:
+                assert False, ("footnote structure", len(footnote[1]),
+                               str(footnote))
 
         elif footnote.tagname == 'paragraph':
-            # Tricky, as need to clean out any extra information,
-            # such as links, since the DTD is very restricted here.
+            # Assume the structure is
+            #  <paragraph>
+            #    <reference name="K. A. Arnaud, I. M. George & A. F. Tennant, "The OGIP Spectral File Format"" refuri="https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/ogip_92_007.html">K. A. Arnaud, I. M. George & A. F. Tennant, "The OGIP Spectral File Format"
+            #     </reference>
+            #     <target ids="['k-a-arnaud-i-m-george-a-f-tennant-the-ogip-spectral-file-format']" names="['k. a. arnaud, i. m. george & a. f. tennant, "the ogip spectral file format"']" refuri="https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/ogip_92_007.html"/>
+            #  </paragraph>
             #
-            # We could add links as text, but let's not bother with
-            # that until we need to.
-            #
-            ElementTree.SubElement(cts, 'ITEM').text = footnote.astext()
+
+            assert len(footnote) == 2, (len(footnote), str(footnote))
+            assert footnote[0].tagname == "reference", ("REFERENCE", str(footnote))
+            assert footnote[1].tagname == "target", ("TARGET", str(footnote))
+
+            assert footnote[0].get("refuri").startswith("http"), ("URI", footnote[0].get("refuri"))
+
+            line = ElementTree.SubElement(syntax, 'LINE')
+            href = ElementTree.SubElement(line, 'HREF')
+            href.text = footnote[0].astext()
+            href.set("link", footnote[0].get("refuri"))
 
         elif footnote.tagname == "citation":
             # Assume the structure is
@@ -1978,14 +2072,51 @@ def find_references(indoc):
             assert len(footnote) == 2, (len(footnote), str(footnote))
             assert footnote[0].tagname == "label", str(footnote[0])
             assert footnote[1].tagname == "paragraph", str(footnote[1])
-            txt = f"[{footnote[0].astext()}] {footnote[1].astext()}"
-            ElementTree.SubElement(cts, 'ITEM').text = txt
+            assert footnote[1].astext().startswith("http"), footnote[1]
+
+            line = ElementTree.SubElement(syntax, 'LINE')
+            href = ElementTree.SubElement(line, 'HREF')
+            href.text = footnote[0].astext()
+            href.set("link", footnote[1].astext())
 
         elif footnote.tagname == "enumerated_list":
+            # Assume structure is
+            # <enumerated_list enumtype="arabic" prefix="" suffix=".">
+            #  <list_item>
+            #   <paragraph>
+            #    <reference name="Cash, W. ..." refuri="...">Cash, W. ...</reference>
+            #    <target ids="['cash-w-parameter-estimation-in-astronomy-through-application-of-the-likelihood-ratio-apj-vol-228-p-939-947-1979']" names="['cash, w. "parameter estimation in astronomy through application of the likelihood ratio", apj, vol 228, p. 939-947 (1979).']" refuri="https://adsabs.harvard.edu/abs/1979ApJ...228..939C"/>
+            #   </paragraph>
+            #  </list_item>
+            #  <list_item>
+            #    ..
+            #  </list_item>
+            # </enumerated_list>
+            #
+            # A paragraph may not have a reference item
+            #
             for subelem in footnote:
                 assert subelem.tagname == "list_item", (subelem.tagname,
                                                         str(subelem))
-                ElementTree.SubElement(cts, 'ITEM').text = subelem.astext()
+
+                assert subelem[0].tagname == "paragraph", subelem
+                para = subelem[0]
+
+                line = ElementTree.SubElement(syntax, 'LINE')
+
+                if para[0].tagname == "reference":
+                    reference = para[0]
+                    assert reference.get("refuri").startswith("http"), reference
+
+                    href = ElementTree.SubElement(line, 'HREF')
+                    href.text = reference.astext()
+                    href.set("link", reference.get("refuri"))
+
+                else:
+                    assert len(para) == 1, len(para)
+
+                    # Assume this is correct
+                    line.text = para.astext()
 
         else:
             assert False, (footnote.tagname, str(footnote))
