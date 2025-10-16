@@ -1211,6 +1211,9 @@ def cleanup_re(regexp, txt):
     if m is None:
         return txt
 
+    # Since the patterns are not guaranteed to find the first match,
+    # we have to apply it to the newly-constructed string.
+    #
     ntxt = m[1] + m[2] + m[3]
     return cleanup_re(regexp, ntxt)
 
@@ -1229,16 +1232,67 @@ def cleanup_sig_function(sig):
     return cleanup_re(FUNCTION_RE, sig)
 
 
+def cleanup_sig_clip(sig):
+    """Special case Union[Literal...] handling."""
+
+    # Should we use re instead?
+    return sig.replace("Union[Literal['none'], Literal['hard'], Literal['soft']]",
+                       "Literal['none'] | Literal['hard'] | Literal['soft']")
+
+def cleanup_sig_rng(sig):
+    """Special-case the RNG type"""
+
+    return sig.replace("numpy.random._generator.Generator | numpy.random.mtrand.RandomState",
+                       "np.random.Generator | np.random.RandomState")
+
+def cleanup_sig_ndarray(sig):
+    """numpy.ndarray -> np.ndarray"""
+
+    return sig.replace("numpy.ndarray", "np.ndarray")
+
+
 def cleanup_sig(sig):
     """Try to make the default Python signature less intimidating.
 
     Heuristics:
 
+    - remove 'collections.abc.' from annotations
+    - replace 'sherpa.astro.data.Data' with 'Data'
+      and a few other cases (note that to try and avoid messing
+      things up we do not do a "sherpa.data." -> ""
+      replacement in case we have "sherpa.data.foo.bar".
 
     """
 
-    sig = cleanup_sig_class(sig)
-    sig = cleanup_sig_function(sig)
+    for cleanup in [cleanup_sig_class,
+                    cleanup_sig_function,
+                    cleanup_sig_clip,
+                    cleanup_sig_rng,
+                    cleanup_sig_ndarray,
+                    ]:
+        sig = cleanup(sig)
+
+    for term in [
+            "collections.abc.",  # note the trailing "." here
+            "sherpa.data.Data",
+            "sherpa.astro.data.Data",
+            "sherpa.fit.Fit",
+            "sherpa.stats.Stat",
+            "sherpa.optmethods.buildin.OptMethod",
+            "sherpa.models.model.Model",
+            "sherpa.models.parameter.Parameter",
+            "sherpa.plot.MultiPlot",
+            "typing.Any",
+            ]:
+        nterm = term.split(".")[-1]
+        sig = sig.replace(term, nterm)
+
+    # Warn if there's a "." in the output signature; there are valid
+    # reasons why there should be, but report them anyway for now.
+    #
+    if sig.find(".") > -1:
+        sys.stderr.write(f"### {sig}\n")
+
     return sig
 
 
@@ -2347,6 +2401,7 @@ def remove_address(arg: str) -> str:
     return re.sub(HEX_PAT, '0x...', arg)
 
 
+# Is this even used?
 def annotate_type(ann) -> str:
     """There must be an easier way to do this"""
 
@@ -2469,6 +2524,38 @@ def add_syntax_as_para(adesc, name: str, sig: Signature):
     out.text = "\n".join(split_sig(name, sig))
 
 
+def strip_pat(pattern: str, inval: str) -> str:
+    """Remove pattern from inval.
+
+    This assumes patterns are separated by whitespace so we
+    do not need to worry.
+    """
+
+    idx = inval.find(pattern)
+    if idx == -1:
+        return inval
+
+    nchar = len(pattern)
+    return inval[:idx] + strip_pat(pattern, inval[idx + nchar:])
+
+
+def convert_datatypes(struct) -> str:
+    """Convert parameter info into text.
+
+    This is highly specialized. It assumes we are being sent
+    a paragraph containing text to display, which may need some
+    cleanup.
+
+    """
+
+    out = astext(struct)
+    for pat in ["sherpa.fit.",
+                "sherpa.models."]:
+        out = strip_pat(pat, out)
+
+    return out
+
+
 def extract_params(fieldinfo,
                    name: str,
                    sig: Signature | None = None):
@@ -2478,7 +2565,7 @@ def extract_params(fieldinfo,
     parameter/attribute values.
 
     The sig argument is currently unused as for CIAO 4.17 it
-    was felt to add no extra inforamtion to the fieldinfo
+    was felt to add no extra information to the fieldinfo
     data. This can be reviewed for 4.18.
 
     """
@@ -2513,11 +2600,23 @@ def extract_params(fieldinfo,
     if len(rvals) > 0:
         assert rvals[0].tagname == 'field_body'
 
-        # If their is no text (other than the name of the return value)
+        # If there is no text (other than the name of the return value)
         # then skip it. I hope this is sufficient
         #
+        # We could try to say "name -- type" but we need to check how
+        # many are like this (i.e. some may just have name and no
+        # type).
+        #
+        # <field_body><paragraph><strong>arf</strong></paragraph></field_body>
+        # <field_body><paragraph>DataARF instance</paragraph></field_body>
+        #
         if len(astext(rvals[0][0]).strip().split()) == 1:
-            return_value = None
+            assert len(retinfo) == 2  # do we have noth?
+            return_value = ElementTree.Element('PARA')
+            # special case direct access
+            return_value.text = f"{astext(retinfo[0][1][0])} " + \
+                f"-- {convert_datatypes(retinfo[1][1][0])}"
+
         else:
             return_value = convert_field_body(rvals[0])
 
@@ -2946,7 +3045,7 @@ def convert_docutils(name: str,
     if fieldlist2 is not None:
         dbg("- ignoring section fieldlist")
 
-    # This has been separated fro the extraction of the field list
+    # This has been separated from the extraction of the field list
     # to support experimentation.
     #
     params = extract_params(fieldlist1, name, actual_sig)
