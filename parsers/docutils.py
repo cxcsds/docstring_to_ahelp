@@ -1296,6 +1296,35 @@ def cleanup_sig(sig):
     return sig
 
 
+def convert_sig(sig: str) -> list[str]:
+    """Is there any cleanup of the signature?
+
+    If there is no return value then no, otherwise separate
+    out the return value.
+
+    """
+
+    # Assume this means the return value (we could identify this
+    # more cleanly if we had the object / annotation itself).
+    #
+    find_str = ") -> "
+    idx = sig.find(find_str)
+    if idx == -1:
+        return [sig]
+
+    inval = sig[:idx + 1]
+    outval = sig[idx + len(find_str):]
+    if outval in ["None", "'None'"]:
+        # Ideally 'None' has been converted to None but it depends
+        # quite how the code is run (e.g. doc2ahelp vs view_docstring).
+        #
+        retval = "No return value."
+    else:
+        retval = f"Returns: {outval}"
+
+    return [inval, "", retval]
+
+
 def find_syntax(name, sig, indoc):
     """Return the syntax line, if present, and the remaining document.
 
@@ -1324,7 +1353,9 @@ def find_syntax(name, sig, indoc):
     # for classes.
     #
     if sig is not None:
-        argline = make_syntax_block([cleanup_sig(sig)])
+        cleaned_sig = cleanup_sig(sig)
+        syntax_block = convert_sig(cleaned_sig)
+        argline = make_syntax_block(syntax_block)
     else:
         argline = None
 
