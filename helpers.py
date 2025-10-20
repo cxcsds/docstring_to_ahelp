@@ -1,9 +1,10 @@
 """Utility routines."""
 
+from collections.abc import Callable, Sequence
 import os
 from inspect import signature
 import sys
-from typing import Any, Callable, Optional, Sequence, Union
+from typing import Any
 
 import numpy as np
 
@@ -17,6 +18,7 @@ from sherpa.astro.data import DataARF, DataPHA, DataRMF
 from sherpa.data import Data
 from sherpa.fit import FitResults
 from sherpa.models.model import Model
+from sherpa.models.parameter import Parameter
 from sherpa.optmethods import OptMethod
 from sherpa.plot import MultiPlot
 from sherpa.stats import Stat
@@ -30,20 +32,24 @@ from parsers.sherpa import sym_to_rst, sym_to_sig
 
 
 # Replace the actual Sherpa version, which uses Python 3.9 compatible
-# syntax, with Python 3.10 versions:
+# syntax, with Python 3.10 versions. Is this still needed?
 #
-# from sherpa.ui.utils import ModelType
-# from sherpa.utils.types import IdType
-# from sherpa.utils.random import RandomType
 
-IdType = int | str
-RandomType = np.random.Generator | np.random.RandomState
-ModelType = Model | str
+from sherpa.sim.sample import ClipValue
+from sherpa.ui.utils import ModelType
+from sherpa.utils.random import RandomType
+from sherpa.utils.types import ArrayType, IdType, IdTypes, PrefsType
+
+# IdType = int | str
+# IdTypes = Sequence[IdType]
+# RandomType = np.random.Generator | np.random.RandomState
+# ModelType = Model | str
+# PrefsType = dict[str, Any]
+# ArrayType = Sequence[float] | np.ndarray
 
 
-
-# CIAO 4.17
-LASTMOD = "December 2024"
+# CIAO 4.18
+LASTMOD = "December 2025"
 
 
 def save_doc(outfile, xmldoc):
@@ -79,7 +85,7 @@ def add_model_list(caption, models, xspec=True,
     This needs to be updated for each CIAO release.
 
     new_elements is a hacky way to send back a list of any new
-    elements;  just sent it an empty list and it will be
+    elements;  just send it an empty list and it will be
     updated with the new elements.
     """
 
@@ -91,10 +97,14 @@ def add_model_list(caption, models, xspec=True,
     # Do we need to beef this up?
     has_new = False
 
-    # CIAO 4.17 has some new models from XSPEC 12.14.0
+    # CIAO 4.17 included XSPEC 12.14.0k
+    # CIAO 4.18 included XSPEC 12.14.0k at present
+    #    but it has new models compared to 4.17.
     #
     if xspec:
         has_new = True
+
+    # has_new = False  # change if XSPEC gets updated
 
     if has_new:
         ElementTree.SubElement(row0, 'DATA').text = 'New'
@@ -136,6 +146,12 @@ def add_model_list(caption, models, xspec=True,
         # it looks like this is now handled in
         # docutils.convert_versionwarning.
         #
+        # It is also awkward for 4.18 since, at present, we have the same
+        # XSPEC version as 4.17 but we do have new models, so you can't
+        # just check for "XSPEC 12.14.0" as some of them were added in
+        # CIAO 4.17 and some in 4.18. Aha - these new models require
+        # XSPEC 12.15.0, and so we do not want to process them here.
+        #
         if xspec:
 
             doc = sym().__doc__
@@ -152,7 +168,9 @@ def add_model_list(caption, models, xspec=True,
             # CIAO 4.15 went out with 12.12.1c
             #      4.16 is 12.13.1e
             #      4.17    12.14.0k
-            new = is_new(12, 14, 0)
+            #      4.18    12.14.0k
+            # new = is_new(12, 14, 0)
+            new = False
 
             # As we are not showing the new column we don't do this
             ElementTree.SubElement(row, 'DATA').text = 'NEW' if new else ''
@@ -227,12 +245,12 @@ def list_xspec_models(outdir, dtd='ahelp'):
     check('multiplicative', mul_models)
     check('convolution', con_models)
 
-    # CIAO 4.17
-    new_add_models = []
+    # CIAO 4.18
+    # new_add_models = []
     should_be_empty = []
 
     atbl = add_model_list('Additive XSPEC models', add_models,
-                          new_elements=new_add_models)
+                          new_elements=should_be_empty)
     mtbl = add_model_list('Multiplicative XSPEC models', mul_models,
                           new_elements=should_be_empty)
     ctbl = add_model_list('Convolution XSPEC models', con_models,
@@ -240,11 +258,11 @@ def list_xspec_models(outdir, dtd='ahelp'):
 
     if should_be_empty != []:
         print(should_be_empty)
-        assert False, "expected no new mul/con models in 4.17"
+        assert False, "expected no new add/mul/con models in 4.18"
 
-    if len(new_add_models) != 50:
-        print(len(new_add_models))
-        assert False, "expected 50 new models"
+    #if new_add_models != []:
+    #    print(new_add_models)
+    #    assert False, "expected no new add models in 4.18"
 
     rootname = None
     if dtd == 'ahelp':
@@ -291,7 +309,7 @@ def list_xspec_models(outdir, dtd='ahelp'):
 
     desc = ElementTree.SubElement(entry, 'DESC')
 
-    add_para(desc, f'''Sherpa in CIAO 4.17 includes the "additive", "multiplicative", and "convolution"
+    add_para(desc, f'''Sherpa in CIAO 4.18 includes the "additive", "multiplicative", and "convolution"
     models of XSPEC version {xspec_version}, and are available by adding the prefix
     "xs" before the XSPEC model name (in lower case). As examples: in Sherpa the XSPEC
     phabs model is called "xsphabs", the vapec model is "xcvapec", and the cflux model
@@ -341,18 +359,17 @@ def list_xspec_models(outdir, dtd='ahelp'):
     href.set('link', "https://heasarc.gsfc.nasa.gov/docs/xanadu/xspec/manual/manual.html")
     href.text = "XSPEC User's Guide"
 
-    # ugly way to add this text
-    href.tail = '''for more information.  Note that the ahelp
+    tail_text = '''for more information.  Note that the ahelp
        files describe the version of the XSPEC model included in
        CIAO, while the XSPEC User's Guide may reference a newer
-       version with different options. If the first column is labelled NEW then
-       the model is new to CIAO 4.17.'''
+       version with different options.'''
 
-    # Overwrite for CIAO 4.15
-    #href.tail = '''for more information.  Note that the ahelp
-    #   files describe the version of the XSPEC model included in
-    #   CIAO, while the XSPEC User's Guide may reference a newer
-    #   version with different options.'''
+    # Add if we get new modes for this release.
+    #
+    #tail_text += ''' If the first column is labelled NEW then
+    #   the model is new to CIAO 4.17.'''
+
+    href.tail = tail_text
 
     adesc.append(atbl)
     adesc.append(mtbl)
@@ -485,7 +502,8 @@ xspowerlaw.pl
     ElementTree.SubElement(syntax, 'LINE').text = f"'{xspec_version}'"
 
     # If we have changes to talk about
-    if True:
+    if False:
+        # TO BE UPDATED
         adesc = ElementTree.SubElement(entry, 'ADESC')
         adesc.set('title', 'Changes in CIAO 4.17')
 
@@ -778,6 +796,8 @@ def process_symbol(name, sym, dtd='ahelp',
     # strings, and try to handle Optional/Union -> a | .... This is
     # not ideal.
     #
+    # Is this still needed?
+    #
     if orig_ann is not None:
         for k, v in orig_ann.items():
             if v == 'None':
@@ -796,15 +816,37 @@ def process_symbol(name, sym, dtd='ahelp',
                 orig_ann[k] = int
                 continue
 
-            if v == 'Optional[int]':
-                orig_ann[k] = int | None
+            if v == 'float':
+                orig_ann[k] = float
                 continue
 
             if v == 'str':
                 orig_ann[k] = str
                 continue
 
-            if v == 'Optional[str]':
+            if v == 'str | float':
+                orig_ann[k] = str | float
+                continue
+
+            if v == 'ArrayType':
+                orig_ann[k] = ArrayType
+                continue
+
+            if v in ['Optional[int]',
+                     'int | None']:
+                orig_ann[k] = int | None
+                continue
+
+            if v == 'bool | None':
+                orig_ann[k] = bool | None
+                continue
+
+            if v == 'float | None':
+                orig_ann[k] = float | None
+                continue
+
+            if v in ['Optional[str]',
+                     'str | None']:
                 orig_ann[k] = str | None
                 continue
 
@@ -813,31 +855,69 @@ def process_symbol(name, sym, dtd='ahelp',
                 continue
 
             if v == 'Sequence[str]':
-                assert False  # do we need this
+                assert False  # do we need this ?
                 orig_ann[k] = Sequence[str]
                 continue
 
-            if v == 'Optional[Sequence[str]]':
+            if v in ['Optional[Sequence[str]]',
+                     'Sequence[str] | None']:
                 orig_ann[k] = Sequence[str] | None
+                continue
+
+            if v == 'np.ndarray':
+                orig_ann[k] = np.ndarray
+                continue
+
+            if v == 'np.ndarray | None':
+                orig_ann[k] = np.ndarray | None
                 continue
 
             if v == 'dict[str, np.ndarray]':
                 orig_ann[k] = dict[str, np.ndarray]
                 continue
 
+            if v == 'dict[str, float]':
+                orig_ann[k] = dict[str, float]
+                continue
+
             if v == 'tuple[tuple[np.ndarray, ...], np.ndarray]':
                 orig_ann[k] = tuple[tuple[np.ndarray, ...], np.ndarray]
+                continue
+
+            if v == 'tuple[np.ndarray, np.ndarray, np.ndarray]':
+                orig_ann[k] = tuple[np.ndarray, np.ndarray, np.ndarray]
+                continue
+
+            if v == 'tuple[float, float, float]':
+                orig_ann[k] = tuple[float, float, float]
                 continue
 
             if v == 'IdType':
                 orig_ann[k] = IdType
                 continue
 
+            if v == 'IdTypes':
+                orig_ann[k] = IdTypes
+                continue
+
+            if v == 'IdTypes | None':
+                orig_ann[k] = IdTypes | None
+                continue
+
+            if v == 'IdType | IdTypes':
+                orig_ann[k] = IdType | IdTypes
+                continue
+
+            if v == 'IdType | IdTypes | None':
+                orig_ann[k] = IdType | IdTypes | None
+                continue
+
             if v == 'list[IdType]':
                 orig_ann[k] = list[IdType]
                 continue
 
-            if v == 'Optional[IdType]':
+            if v in ['Optional[IdType]',
+                     'IdType | None']:
                 orig_ann[k] = IdType | None
                 continue
 
@@ -845,15 +925,18 @@ def process_symbol(name, sym, dtd='ahelp',
                 orig_ann[k] = Sequence[IdType]
                 continue
 
-            if v == 'Optional[Sequence[IdType]]':
+            if v in ['Optional[Sequence[IdType]]',
+                     'Sequence[IdType] | None']:
                 orig_ann[k] = Sequence[IdType] | None
                 continue
 
-            if v == 'Union[IdType, Sequence[IdType]]':
+            if v in ['Union[IdType, Sequence[IdType]]',
+                     'IdType | Sequence[IdType]']:
                 orig_ann[k] = IdType | Sequence[IdType]
                 continue
 
-            if v == 'Optional[Union[IdType, Sequence[IdType]]]':
+            if v in ['Optional[Union[IdType, Sequence[IdType]]]',
+                     'IdType | Sequence[IdType] | None']:
                 orig_ann[k] = IdType | Sequence[IdType] | None
                 continue
 
@@ -861,19 +944,22 @@ def process_symbol(name, sym, dtd='ahelp',
                 orig_ann[k] = Stat
                 continue
 
-            if v == 'Union[str, Stat]':
-                orig_ann[k] = Union[str, Stat]
+            if v in ['Union[str, Stat]',
+                     'str | Stat']:
+                orig_ann[k] = str | Stat
                 continue
 
             if v == 'OptMethod':
                 orig_ann[k] = OptMethod
                 continue
 
-            if v == 'Union[OptMethod, str]':
-                orig_ann[k] = Union[OptMethod, str]
+            if v in ['Union[OptMethod, str]',
+                     'OptMethod | str']:
+                orig_ann[k] = OptMethod | str
                 continue
 
-            if v == 'Optional[RandomType]':
+            if v in ['Optional[RandomType]',
+                     'RandomType | None']:
                 orig_ann[k] = RandomType | None
                 continue
 
@@ -905,12 +991,6 @@ def process_symbol(name, sym, dtd='ahelp',
                 orig_ann[k] = MultiPlot
                 continue
 
-            # This is a bug-let in 4.17.0 - see
-            # https://github.com/sherpa/sherpa/pull/2181 for a fix
-            if v == 'Multiplot':
-                orig_ann[k] = MultiPlot
-                continue
-
             if v == 'ModelType':
                 orig_ann[k] = ModelType
                 continue
@@ -923,13 +1003,44 @@ def process_symbol(name, sym, dtd='ahelp',
                 orig_ann[k] = Callable[[str, Model], None]
                 continue
 
-            if v == 'Optional[Callable[[str, Model], None]]':
+            if v in ['Optional[Callable[[str, Model], None]]',
+                     'Callable[[str, Model], None] | None']:
                 orig_ann[k] = Callable[[str, Model], None] | None
+                continue
+
+            if v == 'str | dict[str, str]':
+                orig_ann[k] = str | dict[str, str]
+                continue
+
+            if v == 'PrefsType':
+                orig_ann[k] = PrefsType
+                continue
+
+            if v == 'Parameter':
+                orig_ann[k] = Parameter
+                continue
+
+            # This should be a short-lived fix
+            if v == 'str | Patameter':
+                orig_ann[k] = str | Parameter
+                continue
+
+            if v == 'str | Parameter':
+                orig_ann[k] = str | Parameter
+                continue
+
+            if v == 'str | Parameter | None':
+                orig_ann[k] = str | Parameter | None
+                continue
+
+            if v == 'ClipValue':
+                orig_ann[k] = ClipValue
                 continue
 
             if isinstance(v, str):
                 # let me know uf there's more annotations to fix
-                assert False, (k, v, type(v))
+                assert False, ("process_symbol:annotation",
+                               k, v, type(v))
 
         sym.__annotations__ = orig_ann
 

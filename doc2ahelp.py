@@ -91,7 +91,7 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
     """
 
     if not os.path.isdir(outdir):
-        sys.stderr.write("ERROR: outdir={} does not exist\n".format(outdir))
+        sys.stderr.write(f"ERROR: outdir={outdir} does not exist\n")
         sys.exit(1)
 
     if dtd not in ['ahelp', 'sxml']:
@@ -108,7 +108,7 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
         if restrict is not None and name not in restrict:
             continue
 
-        print("# {}".format(name))
+        print(f"# {name}")
 
         sym = getattr(ui, name)
 
@@ -121,7 +121,7 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
             continue
 
         if name in synonyms and skip_synonyms:
-            print(" - skipping as a synonym for {}".format(synonyms[name]))
+            print(f" - skipping as a synonym for {synonyms[name]}")
             continue
 
         # Skip AbsorptionVoigt and EmissionVoigt from the list
@@ -180,7 +180,7 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
 
     for name in to_process:
 
-        print("## {}".format(name))
+        print(f"## {name}")
 
         sym = getattr(ui, name)
 
@@ -217,7 +217,7 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
                     print(f" - using metadata from {fmaps[0]}")
                     ahelp['key'] = name  # important!
             else:
-                print(" - ahelp metadata skipped as {}".format(exc))
+                print(f" - ahelp metadata skipped as {exc}")
                 ahelp = None
 
         try:
@@ -226,7 +226,7 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
                                  annotations=handle_annotations,
                                  debug=debug)
         except Exception as exc:
-            print(" - ERROR PROCESSING: {}".format(exc))
+            print(f" - ERROR PROCESSING: {exc}")
             error_list.append(name)
             continue
 
@@ -253,15 +253,15 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
 
         out_name = 'group_sherpa' if name == 'group' else name
         suffix = 'sxml' if dtd == 'sxml' else 'xml'
-        outfile = os.path.join(outdir, '{}.{}'.format(out_name, suffix))
+        outfile = os.path.join(outdir, f'{out_name}.{suffix}')
         save_doc(outfile, xml)
-        print("Created: {}".format(outfile))
+        print(f"Created: {outfile}")
         nproc += 1
 
     nskip = len(names) - nproc
-    print("\nProcessed {} files, skipped {}.".format(nproc, nskip))
+    print(f"\nProcessed {nproc} files, skipped {nskip}.")
     if error_list != []:
-        print("Errored out: {}".format(error_list))
+        print(f"Errored out: {error_list}")
 
     # Create the model lists:
     #    models.suffix

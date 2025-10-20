@@ -170,7 +170,8 @@ unwanted_classes = (ARFModel, RMFModel, RSPModel, PileupRMFModel,
 def unwanted(name, sym):
     """Is this a symbol we do not want to process?
 
-    Use simple heuristics to remove unwanted symbols.
+    Use simple heuristics to remove unwanted symbols. This can include
+    XSPEC models that require a newer XSPEC than we use in CIAO.
 
     Parameters
     ----------
@@ -210,6 +211,21 @@ def unwanted(name, sym):
     #
     if type(sym) == type(object):
         return True
+
+    # Check if an XSPEC model that requires a version of XSPEC newer
+    # than we support in CIAO.
+    # [expected to be used rarely]
+    #
+    if name.startswith("xs"):
+        # The model-wrapper has a modeltype argument we can access to
+        # get the actual model class.
+        #
+        doc = sym.modeltype.__doc__
+        if "This model requires XSPEC 12.15.0 or later." in doc:
+            return True
+
+        if "This model requires XSPEC 12.14.1 or later." in doc:
+            return True
 
     return False
 
