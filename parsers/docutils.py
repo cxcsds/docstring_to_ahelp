@@ -2000,6 +2000,25 @@ def find_warning(indoc):
     return out, indoc[1:]
 
 
+def add_href_para(context,
+                  text: str,
+                  link: str, extra: str | None = None
+                  ) -> None:
+    """Add a PARA/HREF element.
+
+    The extra argument is to add extra text after the HREF.
+    """
+
+    assert link.startswith("http"), link
+    para = ElementTree.SubElement(context, "PARA")
+    href = ElementTree.SubElement(para, "HREF")
+    href.text = text
+    href.set("link", link)
+
+    if extra is not None:
+        href.tail = extra
+
+
 def find_references(indoc):
     """Return the references section, if present, and the remaining document.
 
@@ -2033,10 +2052,12 @@ def find_references(indoc):
                                 indoc[1:])
 
     out = ElementTree.Element("ADESC", {'title': 'References'})
-    para = ElementTree.SubElement(out, 'PARA')
-    syntax = ElementTree.SubElement(para, 'SYNTAX')
 
+    # This used to use a list, but this does not support HREF links,
+    # so change to explicit PARA elements.
+    #
     for footnote in lnodes:
+
         # This used to be a footnote but as of CIAO 4.16 it
         # can now be much more.
         #
@@ -2072,8 +2093,6 @@ def find_references(indoc):
             assert footnote[0].tagname == "label", str(footnote[0])
             assert footnote[1].tagname == "paragraph", str(footnote[1])
 
-            line = ElementTree.SubElement(syntax, 'LINE')
-
             # strip out the paragraph text from the reference URI
             # Assume @refuri is the same as the text contents of reference
             #
@@ -2081,9 +2100,9 @@ def find_references(indoc):
                 # Assume we have text and a reference URI
                 assert footnote[1][1].astext().startswith("http"), footnote[1][1]
 
-                href = ElementTree.SubElement(line, 'HREF')
-                href.text = f"[{footnote[0].astext()}] {footnote[1][0].astext()}"
-                href.set("link", footnote[1][1].astext())
+                add_href_para(out,
+                              f"[{footnote[0].astext()}] {footnote[1][0].astext()}",
+                              footnote[1][1].astext())
 
             elif len(footnote[1]) == 1:
 
@@ -2091,12 +2110,11 @@ def find_references(indoc):
                 l = footnote[0].astext()
                 r = footnote[1].astext()
                 if r.startswith("http"):
-                    href = ElementTree.SubElement(line, 'HREF')
-                    href.text = f"[{l}]"
-                    href.set("link", r)
+                    add_href_para(out, f"[{l}]", r)
 
                 else:
-                    line.text = f"[{l}] {r}"
+                    outpara = ElementTree.SubElement(out, "PARA")
+                    outpara.text = f"[{l}] {r}"
 
             elif footnote[1][0].tagname == "reference" and \
                  footnote[1][0].get("refuri").startswith("http"):
@@ -2104,22 +2122,20 @@ def find_references(indoc):
                 refuri = footnote[1][0].get("refuri")
 
                 # Need to add extra text, that may itself contain things
-                # that need further processing.
+                # that need further processing. Although this is extra
+                # processing is not actually done.
                 #
-                href = ElementTree.SubElement(line, 'HREF')
-
                 if footnote[1][0].astext() == refuri:
-                    href.text = f"[{footnote[0].astext()}]"
+                    outtext = f"[{footnote[0].astext()}]"
                 else:
-                    href.text = f"[{footnote[0].astext()}] {footnote[1][0].astext()}"
-
-                href.set("link", refuri)
+                    outtext = f"[{footnote[0].astext()}] {footnote[1][0].astext()}"
 
                 # Add in the extra text (for now no post-processing).
                 #
                 dump = "".join(footnote[1][idx].astext()
                                for idx in range(1, len(footnote[1])))
-                href.tail = dump
+
+                add_href_para(out, outtext, refuri, extra=dump)
 
             else:
                 assert False, ("footnote structure", len(footnote[1]),
@@ -2140,10 +2156,8 @@ def find_references(indoc):
 
             assert footnote[0].get("refuri").startswith("http"), ("URI", footnote[0].get("refuri"))
 
-            line = ElementTree.SubElement(syntax, 'LINE')
-            href = ElementTree.SubElement(line, 'HREF')
-            href.text = footnote[0].astext()
-            href.set("link", footnote[0].get("refuri"))
+            add_href_para(out, footnote[0].astext(),
+                          footnote[0].get("refuri"))
 
         elif footnote.tagname == "citation":
             # Assume the structure is
@@ -2159,10 +2173,8 @@ def find_references(indoc):
             assert footnote[1].tagname == "paragraph", str(footnote[1])
             assert footnote[1].astext().startswith("http"), footnote[1]
 
-            line = ElementTree.SubElement(syntax, 'LINE')
-            href = ElementTree.SubElement(line, 'HREF')
-            href.text = footnote[0].astext()
-            href.set("link", footnote[1].astext())
+            add_href_para(out, footnote[0].astext(),
+                          footnote[1].astext())
 
         elif footnote.tagname == "enumerated_list":
             # Assume structure is
@@ -2187,21 +2199,19 @@ def find_references(indoc):
                 assert subelem[0].tagname == "paragraph", subelem
                 para = subelem[0]
 
-                line = ElementTree.SubElement(syntax, 'LINE')
-
                 if para[0].tagname == "reference":
                     reference = para[0]
                     assert reference.get("refuri").startswith("http"), reference
 
-                    href = ElementTree.SubElement(line, 'HREF')
-                    href.text = reference.astext()
-                    href.set("link", reference.get("refuri"))
+                    add_href_para(out, reference.astext(),
+                                  reference.get("refuri"))
 
                 else:
                     assert len(para) == 1, len(para)
 
                     # Assume this is correct
-                    line.text = para.astext()
+                    outpara = ElementTree.SubElement(out, "PARA")
+                    outpara.text = para.astext()
 
         else:
             assert False, (footnote.tagname, str(footnote))
