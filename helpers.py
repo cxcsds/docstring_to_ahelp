@@ -784,13 +784,14 @@ def process_symbol(name, sym, dtd='ahelp',
             #
             sym.__annotations__ = None
 
-        else:
+        elif annotations != "keep":
             # temporarily over-ride the annotations
             #
             orig_ann = sym.__annotations__
             sym.__annotations__ = None
 
-    sig, _ = sym_to_sig(name, sym)
+        else:
+            orig_ann = sym.__annotations__
 
     # Restore the annotations, if set. Note that we convert them from
     # strings, and try to handle Optional/Union -> a | .... This is
@@ -1043,6 +1044,8 @@ def process_symbol(name, sym, dtd='ahelp',
                                k, v, type(v))
 
         sym.__annotations__ = orig_ann
+
+    sig, _ = sym_to_sig(name, sym)
 
     sherpa_doc = sym_to_rst(name, sym)
     if sherpa_doc is None:

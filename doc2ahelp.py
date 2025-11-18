@@ -53,6 +53,7 @@ TODO:
 
 from collections import defaultdict
 import os
+from pathlib import Path
 
 from sherpa.astro import ui
 
@@ -90,8 +91,9 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
         The set of symbols to use (if not all).
     """
 
-    if not os.path.isdir(outdir):
-        sys.stderr.write(f"ERROR: outdir={outdir} does not exist\n")
+    outpath = Path(outdir)
+    if not outpath.is_dir():
+        sys.stderr.write(f"ERROR: outdir={outpath} does not exist\n")
         sys.exit(1)
 
     if dtd not in ['ahelp', 'sxml']:
@@ -253,9 +255,11 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
 
         out_name = 'group_sherpa' if name == 'group' else name
         suffix = 'sxml' if dtd == 'sxml' else 'xml'
-        outfile = os.path.join(outdir, f'{out_name}.{suffix}')
-        save_doc(outfile, xml)
-        print(f"Created: {outfile}")
+        actual_name = f'{out_name}.{suffix}'
+        out = outpath / actual_name
+        save_doc(str(out), xml)
+
+        print(f"Created: <outdir>/{actual_name}")
         nproc += 1
 
     nskip = len(names) - nproc
@@ -270,7 +274,11 @@ def convert(outdir, dtd='ahelp', modelsonly=False,
     print("\nAlso:")
     for outfile in [list_sherpa_models(outdir, dtd=dtd),
                     list_xspec_models(outdir, dtd=dtd)]:
-        print(f"  {outfile}")
+
+        # replace output directory with "<outdir>"
+        outpath = Path(outfile)
+
+        print(f"  <outdir>/{outpath.name}")
 
     print("")
 
@@ -369,6 +377,7 @@ if __name__ == "__main__":
     dtd = 'sxml' if args.sxml else 'ahelp'
 
     print(f"Annotation handling: {args.annotations}")
+    print(f"Outdir: {args.outdir}")
     convert(args.outdir, dtd=dtd, modelsonly=args.models,
             handle_annotations=args.annotations,
             debug=args.debug,

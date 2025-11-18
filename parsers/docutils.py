@@ -1211,6 +1211,9 @@ def cleanup_re(regexp, txt):
     if m is None:
         return txt
 
+    # Since the patterns are not guaranteed to find the first match,
+    # we have to apply it to the newly-constructed string.
+    #
     ntxt = m[1] + m[2] + m[3]
     return cleanup_re(regexp, ntxt)
 
@@ -1229,17 +1232,97 @@ def cleanup_sig_function(sig):
     return cleanup_re(FUNCTION_RE, sig)
 
 
+def cleanup_sig_clip(sig):
+    """Special case Union[Literal...] handling."""
+
+    # Should we use re instead?
+    return sig.replace("Union[Literal['none'], Literal['hard'], Literal['soft']]",
+                       "Literal['none'] | Literal['hard'] | Literal['soft']")
+
+def cleanup_sig_rng(sig):
+    """Special-case the RNG type"""
+
+    return sig.replace("numpy.random._generator.Generator | numpy.random.mtrand.RandomState",
+                       "np.random.Generator | np.random.RandomState")
+
+def cleanup_sig_ndarray(sig):
+    """numpy.ndarray -> np.ndarray"""
+
+    return sig.replace("numpy.ndarray", "np.ndarray")
+
+
 def cleanup_sig(sig):
     """Try to make the default Python signature less intimidating.
 
     Heuristics:
 
+    - remove 'collections.abc.' from annotations
+    - replace 'sherpa.astro.data.Data' with 'Data'
+      and a few other cases (note that to try and avoid messing
+      things up we do not do a "sherpa.data." -> ""
+      replacement in case we have "sherpa.data.foo.bar".
 
     """
 
-    sig = cleanup_sig_class(sig)
-    sig = cleanup_sig_function(sig)
+    for cleanup in [cleanup_sig_class,
+                    cleanup_sig_function,
+                    cleanup_sig_clip,
+                    cleanup_sig_rng,
+                    cleanup_sig_ndarray,
+                    ]:
+        sig = cleanup(sig)
+
+    for term in [
+            "collections.abc.",  # note the trailing "." here
+            "sherpa.data.Data",
+            "sherpa.astro.data.Data",
+            "sherpa.fit.Fit",
+            "sherpa.stats.Stat",
+            "sherpa.optmethods.buildin.OptMethod",
+            "sherpa.models.model.Model",
+            "sherpa.models.parameter.Parameter",
+            "sherpa.plot.MultiPlot",
+            "typing.Any",
+            ]:
+        nterm = term.split(".")[-1]
+        sig = sig.replace(term, nterm)
+
+    # Warn if there's a "." in the output signature; there are valid
+    # reasons why there should be, but report them anyway for now.
+    #
+    if sig.find(".") > -1:
+        sys.stderr.write(f"### {sig}\n")
+
     return sig
+
+
+def convert_sig(sig: str) -> list[str]:
+    """Is there any cleanup of the signature?
+
+    If there is no return value then no, otherwise separate
+    out the return value.
+
+    """
+
+    # Assume this means the return value (we could identify this
+    # more cleanly if we had the object / annotation itself).
+    #
+    find_str = ") -> "
+    idx = sig.find(find_str)
+    if idx == -1:
+        return [sig]
+
+    inval = sig[:idx + 1]
+    outval = sig[idx + len(find_str):]
+    if outval in ["None", "'None'"]:
+        # Ideally 'None' has been converted to None but it depends
+        # quite how the code is run (e.g. doc2ahelp vs view_docstring).
+        #
+        retval = "No return value."
+    else:
+        retval = f"Returns: {outval}"
+
+    return [inval, "", retval]
 
 
 def find_syntax(name, sig, indoc):
@@ -1270,7 +1353,9 @@ def find_syntax(name, sig, indoc):
     # for classes.
     #
     if sig is not None:
-        argline = make_syntax_block([cleanup_sig(sig)])
+        cleaned_sig = cleanup_sig(sig)
+        syntax_block = convert_sig(cleaned_sig)
+        argline = make_syntax_block(syntax_block)
     else:
         argline = None
 
@@ -1915,6 +2000,25 @@ def find_warning(indoc):
     return out, indoc[1:]
 
 
+def add_href_para(context,
+                  text: str,
+                  link: str, extra: str | None = None
+                  ) -> None:
+    """Add a PARA/HREF element.
+
+    The extra argument is to add extra text after the HREF.
+    """
+
+    assert link.startswith("http"), link
+    para = ElementTree.SubElement(context, "PARA")
+    href = ElementTree.SubElement(para, "HREF")
+    href.text = text
+    href.set("link", link)
+
+    if extra is not None:
+        href.tail = extra
+
+
 def find_references(indoc):
     """Return the references section, if present, and the remaining document.
 
@@ -1948,23 +2052,112 @@ def find_references(indoc):
                                 indoc[1:])
 
     out = ElementTree.Element("ADESC", {'title': 'References'})
-    cts = ElementTree.SubElement(out, 'LIST')
 
+    # This used to use a list, but this does not support HREF links,
+    # so change to explicit PARA elements.
+    #
     for footnote in lnodes:
+
         # This used to be a footnote but as of CIAO 4.16 it
         # can now be much more.
         #
         if footnote.tagname == 'footnote':
-            ElementTree.SubElement(cts, 'ITEM').text = astext(footnote)
+            # Assume the structure is
+            # <footnote ids="footnote-1" names="1">
+            #   <label>1</label>
+            #   <paragraph>Calzetti, Kinney, Storchi-Bergmann, 1994, ApJ, 429, 582
+            #     <reference refuri="https://adsabs.harvard.edu/abs/1994ApJ...429..582C">https://adsabs.harvard.edu/abs/1994ApJ...429..582C</reference>
+            #   </paragraph>
+            # </footnote>
+            #
+            # Or
+            #
+            # <footnote ids="footnote-1" names="1">
+            #   <label>1</label>
+            #   <paragraph>
+            #     <reference refuri="https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/XSmodelEdge.html">https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/XSmodelEdge.html</reference>
+            #   </paragraph>
+            # </footnote>
+            #
+            # Or
+            #
+            # <footnote ids="footnote-1" names="1">
+            #   <label>1</label>
+            #   <paragraph>
+            #     <reference refuri="https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/XSabund.html">https://heasarc.gsfc.nasa.gov/xanadu/xspec/manual/XSabund.html</reference>\nNote that this may refer to a newer version than the\ncompiled version used by Sherpa; use <title_reference>get_xsversion</title_reference> to\ncheck.
+            #   </paragraph>
+            # </footnote>'
+            #
+
+            assert len(footnote) == 2, (len(footnote), str(footnote))
+            assert footnote[0].tagname == "label", str(footnote[0])
+            assert footnote[1].tagname == "paragraph", str(footnote[1])
+
+            # strip out the paragraph text from the reference URI
+            # Assume @refuri is the same as the text contents of reference
+            #
+            if len(footnote[1]) == 2:
+                # Assume we have text and a reference URI
+                assert footnote[1][1].astext().startswith("http"), footnote[1][1]
+
+                add_href_para(out,
+                              f"[{footnote[0].astext()}] {footnote[1][0].astext()}",
+                              footnote[1][1].astext())
+
+            elif len(footnote[1]) == 1:
+
+                # Do we have a URL?
+                l = footnote[0].astext()
+                r = footnote[1].astext()
+                if r.startswith("http"):
+                    add_href_para(out, f"[{l}]", r)
+
+                else:
+                    outpara = ElementTree.SubElement(out, "PARA")
+                    outpara.text = f"[{l}] {r}"
+
+            elif footnote[1][0].tagname == "reference" and \
+                 footnote[1][0].get("refuri").startswith("http"):
+
+                refuri = footnote[1][0].get("refuri")
+
+                # Need to add extra text, that may itself contain things
+                # that need further processing. Although this is extra
+                # processing is not actually done.
+                #
+                if footnote[1][0].astext() == refuri:
+                    outtext = f"[{footnote[0].astext()}]"
+                else:
+                    outtext = f"[{footnote[0].astext()}] {footnote[1][0].astext()}"
+
+                # Add in the extra text (for now no post-processing).
+                #
+                dump = "".join(footnote[1][idx].astext()
+                               for idx in range(1, len(footnote[1])))
+
+                add_href_para(out, outtext, refuri, extra=dump)
+
+            else:
+                assert False, ("footnote structure", len(footnote[1]),
+                               str(footnote))
 
         elif footnote.tagname == 'paragraph':
-            # Tricky, as need to clean out any extra information,
-            # such as links, since the DTD is very restricted here.
+            # Assume the structure is
+            #  <paragraph>
+            #    <reference name="K. A. Arnaud, I. M. George & A. F. Tennant, "The OGIP Spectral File Format"" refuri="https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/ogip_92_007.html">K. A. Arnaud, I. M. George & A. F. Tennant, "The OGIP Spectral File Format"
+            #     </reference>
+            #     <target ids="['k-a-arnaud-i-m-george-a-f-tennant-the-ogip-spectral-file-format']" names="['k. a. arnaud, i. m. george & a. f. tennant, "the ogip spectral file format"']" refuri="https://heasarc.gsfc.nasa.gov/docs/heasarc/ofwg/docs/spectra/ogip_92_007/ogip_92_007.html"/>
+            #  </paragraph>
             #
-            # We could add links as text, but let's not bother with
-            # that until we need to.
-            #
-            ElementTree.SubElement(cts, 'ITEM').text = footnote.astext()
+
+            assert len(footnote) == 2, (len(footnote), str(footnote))
+            assert footnote[0].tagname == "reference", ("REFERENCE", str(footnote))
+            assert footnote[1].tagname == "target", ("TARGET", str(footnote))
+
+            assert footnote[0].get("refuri").startswith("http"), ("URI", footnote[0].get("refuri"))
+
+            add_href_para(out, footnote[0].astext(),
+                          footnote[0].get("refuri"))
 
         elif footnote.tagname == "citation":
             # Assume the structure is
@@ -1978,14 +2171,47 @@ def find_references(indoc):
             assert len(footnote) == 2, (len(footnote), str(footnote))
             assert footnote[0].tagname == "label", str(footnote[0])
             assert footnote[1].tagname == "paragraph", str(footnote[1])
-            txt = f"[{footnote[0].astext()}] {footnote[1].astext()}"
-            ElementTree.SubElement(cts, 'ITEM').text = txt
+            assert footnote[1].astext().startswith("http"), footnote[1]
+
+            add_href_para(out, footnote[0].astext(),
+                          footnote[1].astext())
 
         elif footnote.tagname == "enumerated_list":
+            # Assume structure is
+            # <enumerated_list enumtype="arabic" prefix="" suffix=".">
+            #  <list_item>
+            #   <paragraph>
+            #    <reference name="Cash, W. ..." refuri="...">Cash, W. ...</reference>
+            #    <target ids="['cash-w-parameter-estimation-in-astronomy-through-application-of-the-likelihood-ratio-apj-vol-228-p-939-947-1979']" names="['cash, w. "parameter estimation in astronomy through application of the likelihood ratio", apj, vol 228, p. 939-947 (1979).']" refuri="https://adsabs.harvard.edu/abs/1979ApJ...228..939C"/>
+            #   </paragraph>
+            #  </list_item>
+            #  <list_item>
+            #    ..
+            #  </list_item>
+            # </enumerated_list>
+            #
+            # A paragraph may not have a reference item
+            #
             for subelem in footnote:
                 assert subelem.tagname == "list_item", (subelem.tagname,
                                                         str(subelem))
-                ElementTree.SubElement(cts, 'ITEM').text = subelem.astext()
+
+                assert subelem[0].tagname == "paragraph", subelem
+                para = subelem[0]
+
+                if para[0].tagname == "reference":
+                    reference = para[0]
+                    assert reference.get("refuri").startswith("http"), reference
+
+                    add_href_para(out, reference.astext(),
+                                  reference.get("refuri"))
+
+                else:
+                    assert len(para) == 1, len(para)
+
+                    # Assume this is correct
+                    outpara = ElementTree.SubElement(out, "PARA")
+                    outpara.text = para.astext()
 
         else:
             assert False, (footnote.tagname, str(footnote))
@@ -2216,6 +2442,7 @@ def remove_address(arg: str) -> str:
     return re.sub(HEX_PAT, '0x...', arg)
 
 
+# Is this even used?
 def annotate_type(ann) -> str:
     """There must be an easier way to do this"""
 
@@ -2338,6 +2565,38 @@ def add_syntax_as_para(adesc, name: str, sig: Signature):
     out.text = "\n".join(split_sig(name, sig))
 
 
+def strip_pat(pattern: str, inval: str) -> str:
+    """Remove pattern from inval.
+
+    This assumes patterns are separated by whitespace so we
+    do not need to worry.
+    """
+
+    idx = inval.find(pattern)
+    if idx == -1:
+        return inval
+
+    nchar = len(pattern)
+    return inval[:idx] + strip_pat(pattern, inval[idx + nchar:])
+
+
+def convert_datatypes(struct) -> str:
+    """Convert parameter info into text.
+
+    This is highly specialized. It assumes we are being sent
+    a paragraph containing text to display, which may need some
+    cleanup.
+
+    """
+
+    out = astext(struct)
+    for pat in ["sherpa.fit.",
+                "sherpa.models."]:
+        out = strip_pat(pat, out)
+
+    return out
+
+
 def extract_params(fieldinfo,
                    name: str,
                    sig: Signature | None = None):
@@ -2347,7 +2606,7 @@ def extract_params(fieldinfo,
     parameter/attribute values.
 
     The sig argument is currently unused as for CIAO 4.17 it
-    was felt to add no extra inforamtion to the fieldinfo
+    was felt to add no extra information to the fieldinfo
     data. This can be reviewed for 4.18.
 
     """
@@ -2382,11 +2641,23 @@ def extract_params(fieldinfo,
     if len(rvals) > 0:
         assert rvals[0].tagname == 'field_body'
 
-        # If their is no text (other than the name of the return value)
+        # If there is no text (other than the name of the return value)
         # then skip it. I hope this is sufficient
         #
+        # We could try to say "name -- type" but we need to check how
+        # many are like this (i.e. some may just have name and no
+        # type).
+        #
+        # <field_body><paragraph><strong>arf</strong></paragraph></field_body>
+        # <field_body><paragraph>DataARF instance</paragraph></field_body>
+        #
         if len(astext(rvals[0][0]).strip().split()) == 1:
-            return_value = None
+            assert len(retinfo) == 2  # do we have noth?
+            return_value = ElementTree.Element('PARA')
+            # special case direct access
+            return_value.text = f"{astext(retinfo[0][1][0])} " + \
+                f"-- {convert_datatypes(retinfo[1][1][0])}"
+
         else:
             return_value = convert_field_body(rvals[0])
 
@@ -2815,7 +3086,7 @@ def convert_docutils(name: str,
     if fieldlist2 is not None:
         dbg("- ignoring section fieldlist")
 
-    # This has been separated fro the extraction of the field list
+    # This has been separated from the extraction of the field list
     # to support experimentation.
     #
     params = extract_params(fieldlist1, name, actual_sig)
